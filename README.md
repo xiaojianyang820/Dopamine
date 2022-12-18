@@ -8,6 +8,25 @@
   <img src="https://google.github.io/dopamine/images/dopamine_logo.png"><br><br>
 </div>
 
+本项目将在Google开源Dopamine项目的基础上，进一步发展值分布型强化学习算法。
+
+## 新增算法
+### 高斯混合算法
+在Dopamine框架下我们新增了高斯混合算法（Mixed Weighted Gaussian，MWG）。相关的论文我们会随后提交至线上。
+此外，根据MWG算法中提出的DRL标准实现框架，在进行投影操作之前，应该将新分布与旧分布的表示样本进行混合。根据这一个主要创新点，
+提出了一种对IQN方法的改进方法，同时，在MWG算法中移除这一个改进方法，以对比这一改进所具有的实际效果。可以基于如下的gin配置文件
+运行相应的算法实现：
+- 标准MWG算法：dopamine/agents/mg/configs/mwg_zaxxon.gin
+- 标准IQN算法：dopamine/agents/implicit_quantile/configs/implicit_quantile_asteroids.gin
+- 移除了样本混合的MWG算法：dopamine/agents/mg/configs/mwg_no_mix_zaxxon.gin
+- 增加了样本混合的IQN算法：dopamine/agents/implicit_quantile/configs/implicit_quantile_mix_asteroids.gin
+
+可以通过如下的样例命令来开启模型训练，相关依赖参考Dopamine项目的具体介绍。
+    
+    export game_name=asteroids
+    nohup python -um dopamine.discrete_domains.train --base_dir tmp/iqn_${game_name} \
+        --gin_files dopamine/agents/implicit_quantile/configs/implicit_quantile_${game_name}.gin -> tmp/iqn_${game_name}_output &
+
 Dopamine is a research framework for fast prototyping of reinforcement learning
 algorithms. It aims to fill the need for a small, easily grokked codebase in
 which users can freely experiment with wild ideas (speculative research).
