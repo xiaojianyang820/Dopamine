@@ -1,0 +1,33 @@
+import dopamine.discrete_domains.custom_lib
+import dopamine.discrete_domains.run_experiment
+import dopamine.agents.dqn.dqn_agent
+import dopamine.replay_memory.circular_replay_buffer
+import gin.tf.external_configurables
+
+DQNAgent.observation_shape = %custom_lib.VirtueTB_OBSERVATION_SHAPE
+DQNAgent.observation_dtype = %custom_lib.VirtueTB_OBSERVATION_DTYPE
+DQNAgent.stack_size = %custom_lib.VirtueTB_STACK_SIZE
+DQNAgent.network = @custom_lib.VirtueTBDQNNetwork
+DQNAgent.gamma = 0.95
+DQNAgent.update_horizon = 3
+DQNAgent.min_replay_history = 500
+DQNAgent.update_period = 4
+DQNAgent.target_update_period = 100
+DQNAgent.epsilon_fn = @dqn_agent.linearly_decaying_epsilon
+DQNAgent.tf_device = '/gpu:0'  # use '/cpu:*' for non-GPU version
+DQNAgent.optimizer = @tf.train.AdamOptimizer()
+
+tf.train.AdamOptimizer.learning_rate = 0.001
+tf.train.AdamOptimizer.epsilon = 0.0003125
+
+get_custom_environment.environment_name = 'VirtueTB'
+create_agent.agent_name = 'dqn'
+Runner.create_environment_fn = @custom_lib.get_custom_environment
+Runner.num_iterations = 500
+Runner.training_steps = 1200
+Runner.evaluation_steps = 90
+Runner.max_steps_per_episode = 500  # Default max episode length.
+Runner.clip_rewards = False
+
+WrappedReplayBuffer.replay_capacity = 50000
+WrappedReplayBuffer.batch_size = 128
