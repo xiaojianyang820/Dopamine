@@ -308,7 +308,7 @@ class MultiWeightGaussianAgent(rainbow_agent.RainbowAgent):
     def __init__(self, sess, action_num: int, network=TriangleWeightGaussianNetwork, double_dqn: bool = True,
                  sample_num: int = 192, action_mode: str = 'mean', loss_mode: str = 'mse',
                  before_project_mix_samples: bool = True, prob_clib_value: float = 0.004,
-                 per_mode: str = 'kl',
+                 per_mode: str = 'kl', use_normaled_loss_weight: bool = False,
                  summary_writer=None, summary_writing_frequency=500, print_freq=100000):
         """
 
@@ -334,6 +334,8 @@ class MultiWeightGaussianAgent(rainbow_agent.RainbowAgent):
         :param per_mode: str, optional=('kl', 'wasserstein', 'mse', 'jt')
             进行优先经验回放时选择的模式，'kl'对应了两个分布之间的KL散度；'wasserstein'对应两个分布之间的2阶Wasserstein距离；
             'jt'对应两个分布之间的JT(2,2)散度；'mse'对应统计量之间的均方误差。
+        :param use_normaled_loss_weight: bool, optional=False
+            不同统计量的量纲是有较大差异的，基于这些统计量的均方误差求和计算总误差时是否去除它们的量纲
         :param summary_writer: callable,
             汇总信息写入函数
         :param summary_writing_frequency: int,
@@ -351,6 +353,7 @@ class MultiWeightGaussianAgent(rainbow_agent.RainbowAgent):
         self.before_project_mix_samples = before_project_mix_samples
         self.prob_clib_value = prob_clib_value
         self.per_mode = per_mode
+        self.use_normaled_loss_weight = use_normaled_loss_weight
         print('高斯分量的数量：%d' % self.gaussian_num)
 
         super(MultiWeightGaussianAgent, self).__init__(
@@ -744,7 +747,20 @@ class MultiWeightGaussianAgent(rainbow_agent.RainbowAgent):
         with tf.control_dependencies([update_priorities_op]):
             if self.loss_mode == 'mse':
                 w2_optimizer = tf.compat.v1.train.AdamOptimizer(0.0000625, epsilon=0.00015)
-                w2_train_op = w2_optimizer.minimize(tf.reduce_mean(mean_loss + std_loss + weight_loss))
+                # 由于不同统计量的量纲存在差异，所以需要构造为每一个统计量构造一个量纲调整因子
+                # Scaler
+                mean_loss_mean = tf.reduce_mean(mean_loss)
+                std_loss_mean = tf.reduce_mean(std_loss)
+                weight_loss_mean = tf.reduce_mean(weight_loss)
+                avg_loss_mean = (mean_loss_mean + std_loss_mean + weight_loss_mean) / 3
+                mean_loss_mean, std_loss_mean, weight_loss_mean =\
+                    [i/avg_loss_mean for i in [mean_loss_mean, std_loss_mean, weight_loss_mean]]
+                if self.use_normaled_loss_weight:
+                    w2_train_op = w2_optimizer.minimize(
+                        tf.reduce_mean(mean_loss / mean_loss_mean + std_loss / std_loss_mean +
+                                       weight_loss / weight_loss_mean))
+                else:
+                    w2_train_op = w2_optimizer.minimize(tf.reduce_mean(mean_loss + std_loss + weight_loss))
                 weight_train_op = tf.no_op()
             elif self.loss_mode == 'jtd':
                 jtd_optimizer = tf.compat.v1.train.AdamOptimizer(0.0000625, epsilon=0.00015)
