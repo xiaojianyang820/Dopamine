@@ -14,8 +14,9 @@
 <div align="center">
   <img src="https://github.com/xiaojianyang820/Dopamine/blob/main/images/SIF-DRL.jpg"><br><br>
 </div>
-- 在该框架的指导下，设计了一种基于高斯混合模型进行分布表示的DRL算法--`Mixed Weighted Gaussian(MWG)`算法。
-这一算法的核心程序文件放在`dopamine/agents/mg`。
+
+- 在该框架的指导下，设计了一种基于高斯混合模型进行分布表示的DRL算法-- `Mixed Weighted Gaussian(MWG)` 算法。
+这一算法的核心程序文件放在 `dopamine/agents/mg` 。
 
 #### 对比试验
 该算法的核心创新点在于在投影运算之前将原有分布估计与新分布估计混合到一起。为了检验这一创新点的效应，设计了两个对比试验，无分布混合的`IQN`和有分布混合的`Mix_IQN`的对比，以及无分布混合的`No_Mix_MWG`和有分布混合的`MWG`的对比。
