@@ -864,17 +864,21 @@ class MultiWeightGaussianAgent(rainbow_agent.RainbowAgent):
         self.training_steps += 1
 
     @classmethod
-    def sample_reverse_func(cls, scaled_sample: tf.Tensor, epsilon: float = 0.01) -> tf.Tensor:
+    def sample_reverse_func(cls, scaled_sample: tf.Tensor, epsilon: float = 0.01,
+                            multiplier: float = 5.0) -> tf.Tensor:
         pos_output = ((-1 + tf.sqrt(1 + 4 * epsilon * (1 + epsilon + scaled_sample))) / (2 * epsilon)) ** 2 - 1
         neg_output = 1 - ((-1 + tf.sqrt(1 - 4 * epsilon * (scaled_sample - 1 - epsilon))) / (2 * epsilon)) ** 2
         pos_mask = tf.cast(scaled_sample >= 0, tf.float32)
         neg_mask = 1 - pos_mask
         no_scaled_sample = tf.math.multiply_no_nan(x=pos_output, y=pos_mask) + \
                            tf.math.multiply_no_nan(x=neg_output, y=neg_mask)
+        no_scaled_sample = no_scaled_sample * multiplier
         return no_scaled_sample
 
     @classmethod
-    def sample_scale_func(cls, no_scale_sample: tf.Tensor, epsilon: float = 0.01) -> tf.Tensor:
+    def sample_scale_func(cls, no_scale_sample: tf.Tensor, epsilon: float = 0.01,
+                          multiplier: float = 5.0) -> tf.Tensor:
+        no_scale_sample = no_scale_sample / multiplier
         sign = tf.cast(tf.sign(no_scale_sample), tf.float32)
         scaled_sample = sign * (tf.sqrt(tf.abs(no_scale_sample) + 1) - 1) + epsilon * no_scale_sample
         return scaled_sample
