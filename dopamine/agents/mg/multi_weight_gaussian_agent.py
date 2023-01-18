@@ -308,7 +308,7 @@ class MultiWeightGaussianAgent(rainbow_agent.RainbowAgent):
     def __init__(self, sess, action_num: int, network=TriangleWeightGaussianNetwork, double_dqn: bool = True,
                  sample_num: int = 192, action_mode: str = 'mean', loss_mode: str = 'mse',
                  before_project_mix_samples: bool = True, prob_clib_value: float = 0.004,
-                 per_mode: str = 'kl', use_normaled_loss_weight: bool = False,
+                 per_mode: str = 'kl', use_normaled_loss_weight: bool = False, clip_reward_mode: str = 'reward',
                  summary_writer=None, summary_writing_frequency=500, print_freq=100000):
         """
 
@@ -336,6 +336,11 @@ class MultiWeightGaussianAgent(rainbow_agent.RainbowAgent):
             'jt'对应两个分布之间的JT(2,2)散度；'mse'对应统计量之间的均方误差。
         :param use_normaled_loss_weight: bool, optional=False
             不同统计量的量纲是有较大差异的，基于这些统计量的均方误差求和计算总误差时是否去除它们的量纲
+        :para clip_reward_mode: str, option='reward'
+            对奖励信号或者回报信号进行处理的模式，
+            'none'代表不对奖励信号或者回报信号做任何处理
+            'reward'代表在奖励信号上进行量纲调整
+            'repay'代表在回报信号上进行量纲调整
         :param summary_writer: callable,
             汇总信息写入函数
         :param summary_writing_frequency: int,
@@ -353,6 +358,7 @@ class MultiWeightGaussianAgent(rainbow_agent.RainbowAgent):
         self.before_project_mix_samples = before_project_mix_samples
         self.prob_clib_value = prob_clib_value
         self.per_mode = per_mode
+        self.clip_reward_mode = clip_reward_mode
         self.use_normaled_loss_weight = use_normaled_loss_weight
         print('高斯分量的数量：%d' % self.gaussian_num)
 
@@ -381,6 +387,8 @@ class MultiWeightGaussianAgent(rainbow_agent.RainbowAgent):
         self.cur_action_weight = self._action_node_outputs.action_weight
         # BatchSize x ActionNum x SampleNum
         self.cur_sample = self._build_samples_op(self.cur_action_mean, self.cur_action_std, self.cur_action_weight)
+        if self.clip_reward_mode == 'repay':
+            self.cur_sample = self.sample_reverse_func(self.cur_sample)
         # BatchSize x ActionNum
         self.cur_sample_mean = tf.reduce_mean(self.cur_sample, axis=2)
         # BatchSize x ActionNum
@@ -394,7 +402,11 @@ class MultiWeightGaussianAgent(rainbow_agent.RainbowAgent):
         # Scalar
         if self.action_mode == 'mean':
             print('使用均值系数最大化原则进行决策')
-            self._q_argmax = tf.argmax(self.cur_action_q, axis=1)[0]
+            if self.clip_reward_mode != 'repay':
+                self._q_argmax = tf.argmax(self.cur_action_q, axis=1)[0]
+            else:
+                print('由于使用Repay裁剪模式，所以均值计算模式有变化')
+                self._q_argmax = tf.argmax(self.cur_sample_mean, axis=1)[0]
         elif self.action_mode == 'min':
             print('使用风险回避型原则进行决策')
             self._q_argmax = tf.argmax(self.cur_action_min, axis=1)[0]
@@ -413,6 +425,7 @@ class MultiWeightGaussianAgent(rainbow_agent.RainbowAgent):
         # ++++++++++++++++++ 目标网络 +++++++++++++++++++++++++
         self._replay_target_network_outputs = self.target_convnet(self._replay.next_states)
         _replay_online_network_outputs = self.online_convnet(self._replay.next_states)
+        self._replay_online_network_outputs = _replay_online_network_outputs
         # 主网络所给出的Q估计
         # BatchSize
         if self.action_mode == 'mean':
@@ -540,11 +553,53 @@ class MultiWeightGaussianAgent(rainbow_agent.RainbowAgent):
         # BatchSize x SampleNum
         sample = self._build_samples_op(_target_mean, _target_std, _target_weight)
 
-        # 由于终止信号出现对应的那一帧画面，它的值分布重来没有被训练过，所以输出值是比较随意的。而神经网络所输出的
-        # 标准差是由指数函数导出的，很容易出现极端大的数值。这就会导致溢出问题。由于这一部分样本会乘以0，所以他们的
-        # 具体取值是没有意义的，只不过要避免数值溢出问题
+        if self.clip_reward_mode == 'repay':
+            # 随机采样每一个动作下的值分布样本集合
+            action_mean = self._replay_target_network_outputs.action_mean
+            action_std = self._replay_target_network_outputs.action_std
+            action_weight = self._replay_target_network_outputs.action_weight
+            # BatchSize x ActionNum x SampleNum
+            action_sample = self._build_samples_op(action_mean, action_std, action_weight)
+            # BatchSize x ActionNum x SampleNum
+            normaled_action_sample = self.sample_reverse_func(action_sample)
 
-        return rewards[:, None] + tf.math.multiply_no_nan(y=gamma_with_terminal[:, None], x=sample)
+            # 基于主网络构建动作选择
+            online_action_mean = self._replay_online_network_outputs.action_mean
+            online_action_std = self._replay_online_network_outputs.action_std
+            online_action_weight = self._replay_online_network_outputs.action_weight
+            # BatchSize x ActionNum x SampleNum
+            online_action_sample = self._build_samples_op(online_action_mean, online_action_std, online_action_weight)
+            # BatchSize x ActionNum x SampleNum
+            normaled_online_action_sample = self.sample_reverse_func(online_action_sample)
+            # BatchSize x ActionNum
+            normaled_online_action_mean = tf.reduce_mean(normaled_online_action_sample, axis=2)
+            online_action_argmax = tf.cast(tf.reduce_max(normaled_online_action_mean, axis=1), tf.int64)
+
+            # BatchSize x ActionNUm
+            normaled_action_mean = tf.reduce_mean(normaled_action_sample, axis=2)
+            # BatchSize
+            action_argmax = tf.cast(tf.reduce_max(normaled_action_mean, axis=1), tf.int64)
+
+            select_action_argmax = online_action_argmax if self.double_dqn else action_argmax
+
+            # BatchSize x 2
+            repay_gather_indices = tf.concat([batch_indices, select_action_argmax[:, None]], axis=1)
+            # BatchSize X SampleNum
+
+            repay_sample = tf.gather_nd(params=normaled_action_sample, indices=repay_gather_indices)
+
+            target_samples = self.sample_scale_func(
+                rewards[:, None] + gamma_with_terminal[:, None] * repay_sample
+            )
+        elif self.clip_reward_mode == 'reward':
+            scaled_rewards = tf.cast(tf.sign(rewards), tf.float32) * tf.sqrt(tf.abs(rewards)) + 0.001 * rewards
+            target_samples = scaled_rewards[:, None] + gamma_with_terminal[:, None] * sample
+        elif self.clip_reward_mode == 'none':
+            target_samples = rewards + gamma_with_terminal[:, None] * sample
+        else:
+            raise ValueError('对奖励或者回报的裁剪方法（%s）没有定义' % self.clip_reward_mode)
+
+        return target_samples
 
     def _build_target_statistic_op(self, _cur_mean, _cur_std, _cur_weight):
         batch_size = self._replay.batch_size
@@ -749,12 +804,13 @@ class MultiWeightGaussianAgent(rainbow_agent.RainbowAgent):
                 w2_optimizer = tf.compat.v1.train.AdamOptimizer(0.0000625, epsilon=0.00015)
                 # 由于不同统计量的量纲存在差异，所以需要构造为每一个统计量构造一个量纲调整因子
                 # Scaler
-                mean_loss_mean = tf.reduce_mean(mean_loss)
-                std_loss_mean = tf.reduce_mean(std_loss)
-                weight_loss_mean = tf.reduce_mean(weight_loss)
+                mean_loss_mean = tf.sqrt(tf.reduce_mean(mean_loss))
+                std_loss_mean = tf.sqrt(tf.reduce_mean(std_loss))
+                weight_loss_mean = tf.sqrt(tf.reduce_mean(weight_loss))
                 avg_loss_mean = (mean_loss_mean + std_loss_mean + weight_loss_mean) / 3
                 mean_loss_mean, std_loss_mean, weight_loss_mean =\
-                    [i/avg_loss_mean for i in [mean_loss_mean, std_loss_mean, weight_loss_mean]]
+                    [tf.stop_gradient(i/avg_loss_mean) for i in [mean_loss_mean, std_loss_mean, weight_loss_mean]]
+
                 if self.use_normaled_loss_weight:
                     w2_train_op = w2_optimizer.minimize(
                         tf.reduce_mean(mean_loss / mean_loss_mean + std_loss / std_loss_mean +
@@ -806,3 +862,19 @@ class MultiWeightGaussianAgent(rainbow_agent.RainbowAgent):
                 self._sess.run(self._sync_qt_ops)
 
         self.training_steps += 1
+
+    @classmethod
+    def sample_reverse_func(cls, scaled_sample: tf.Tensor, epsilon: float = 0.01) -> tf.Tensor:
+        pos_output = ((-1 + tf.sqrt(1 + 4 * epsilon * (1 + epsilon + scaled_sample))) / (2 * epsilon)) ** 2 - 1
+        neg_output = 1 - ((-1 + tf.sqrt(1 - 4 * epsilon * (scaled_sample - 1 - epsilon))) / (2 * epsilon)) ** 2
+        pos_mask = tf.cast(scaled_sample >= 0, tf.float32)
+        neg_mask = 1 - pos_mask
+        no_scaled_sample = tf.math.multiply_no_nan(x=pos_output, y=pos_mask) + \
+                           tf.math.multiply_no_nan(x=neg_output, y=neg_mask)
+        return no_scaled_sample
+
+    @classmethod
+    def sample_scale_func(cls, no_scale_sample: tf.Tensor, epsilon: float = 0.01) -> tf.Tensor:
+        sign = tf.cast(tf.sign(no_scale_sample), tf.float32)
+        scaled_sample = sign * (tf.sqrt(tf.abs(no_scale_sample) + 1) - 1) + epsilon * no_scale_sample
+        return scaled_sample

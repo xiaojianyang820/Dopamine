@@ -450,7 +450,8 @@ class Runner(object):
         reward = np.clip(reward, -1, 1)
       else:
         #print('调整奖励信号的量纲')
-        reward = np.sign(reward) * np.sqrt(np.abs(reward)) + 0.001 * reward
+        #reward = np.sign(reward) * np.sqrt(np.abs(reward)) + 0.001 * reward
+        reward = reward
         pass
 
       if (self._environment.game_over or
