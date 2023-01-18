@@ -25,6 +25,7 @@
 - 标准IQN算法：`dopamine/agents/implicit_quantile/configs/implicit_quantile_asteroids.gin`
 - 移除了样本混合的MWG算法：`dopamine/agents/mg/configs/mwg_no_mix_zaxxon.gin`
 - 增加了样本混合的IQN算法：`dopamine/agents/implicit_quantile/configs/implicit_quantile_mix_asteroids.gin`
+
 在12个Atari游戏上测试了这四种设定下的控制效果如下。
 <table border="2" align="center">
     <th bgcolor="navy"> <td>Mean HNS </td> <td> Median HNS</td> </th>
@@ -45,7 +46,8 @@
   <img src="https://github.com/xiaojianyang820/Dopamine/blob/main/images/MixIQN.png"><br><br>
 </div>
 
-可以通过如下的样例命令来开启模型训练，相关依赖参考Dopamine项目的具体介绍。
+#### 运行算法
+可以通过如下的样例命令来开启模型训练，`.gin`文件是算法参数的配置文件，`base_dir`指定了训练日志以及模型参数的存储文件夹，如果该文件夹非空，程序会优先读取其中已有的参数，并继续运行程序。
     
     export game_name=asteroids
     nohup python -um dopamine.discrete_domains.train --base_dir tmp/iqn_${game_name} \
