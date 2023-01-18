@@ -405,8 +405,8 @@ class MultiWeightGaussianAgent(rainbow_agent.RainbowAgent):
             if self.clip_reward_mode != 'repay':
                 self._q_argmax = tf.argmax(self.cur_action_q, axis=1)[0]
             else:
-                print('由于使用Repay裁剪模式，所以均值计算模式有变化')
-                self._q_argmax = tf.argmax(self.cur_sample_mean, axis=1)[0]
+                print('心理效用模式下的决策--[风险回避]')
+                self._q_argmax = tf.argmax(self.cur_action_q, axis=1)[0]
         elif self.action_mode == 'min':
             print('使用风险回避型原则进行决策')
             self._q_argmax = tf.argmax(self.cur_action_min, axis=1)[0]
@@ -554,42 +554,8 @@ class MultiWeightGaussianAgent(rainbow_agent.RainbowAgent):
         sample = self._build_samples_op(_target_mean, _target_std, _target_weight)
 
         if self.clip_reward_mode == 'repay':
-            # 随机采样每一个动作下的值分布样本集合
-            action_mean = self._replay_target_network_outputs.action_mean
-            action_std = self._replay_target_network_outputs.action_std
-            action_weight = self._replay_target_network_outputs.action_weight
-            # BatchSize x ActionNum x SampleNum
-            action_sample = self._build_samples_op(action_mean, action_std, action_weight)
-            # BatchSize x ActionNum x SampleNum
-            normaled_action_sample = self.sample_reverse_func(action_sample)
-
-            # 基于主网络构建动作选择
-            online_action_mean = self._replay_online_network_outputs.action_mean
-            online_action_std = self._replay_online_network_outputs.action_std
-            online_action_weight = self._replay_online_network_outputs.action_weight
-            # BatchSize x ActionNum x SampleNum
-            online_action_sample = self._build_samples_op(online_action_mean, online_action_std, online_action_weight)
-            # BatchSize x ActionNum x SampleNum
-            normaled_online_action_sample = self.sample_reverse_func(online_action_sample)
-            # BatchSize x ActionNum
-            normaled_online_action_mean = tf.reduce_mean(normaled_online_action_sample, axis=2)
-            online_action_argmax = tf.cast(tf.reduce_max(normaled_online_action_mean, axis=1), tf.int64)
-
-            # BatchSize x ActionNUm
-            normaled_action_mean = tf.reduce_mean(normaled_action_sample, axis=2)
-            # BatchSize
-            action_argmax = tf.cast(tf.reduce_max(normaled_action_mean, axis=1), tf.int64)
-
-            select_action_argmax = online_action_argmax if self.double_dqn else action_argmax
-
-            # BatchSize x 2
-            repay_gather_indices = tf.concat([batch_indices, select_action_argmax[:, None]], axis=1)
-            # BatchSize X SampleNum
-
-            repay_sample = tf.gather_nd(params=normaled_action_sample, indices=repay_gather_indices)
-
             target_samples = self.sample_scale_func(
-                rewards[:, None] + gamma_with_terminal[:, None] * repay_sample
+                rewards[:, None] + gamma_with_terminal[:, None] * self.sample_reverse_func(sample)
             )
         elif self.clip_reward_mode == 'reward':
             multiplier = 5.0
