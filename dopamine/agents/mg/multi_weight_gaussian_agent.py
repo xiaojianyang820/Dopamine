@@ -592,7 +592,9 @@ class MultiWeightGaussianAgent(rainbow_agent.RainbowAgent):
                 rewards[:, None] + gamma_with_terminal[:, None] * repay_sample
             )
         elif self.clip_reward_mode == 'reward':
-            scaled_rewards = tf.cast(tf.sign(rewards), tf.float32) * tf.sqrt(tf.abs(rewards)) + 0.001 * rewards
+            multiplier = 5.0
+            scaled_rewards = tf.cast(tf.sign(rewards), tf.float32) * tf.sqrt(tf.abs(rewards)/multiplier) +\
+                             0.001 * rewards
             target_samples = scaled_rewards[:, None] + gamma_with_terminal[:, None] * sample
         elif self.clip_reward_mode == 'none':
             target_samples = rewards + gamma_with_terminal[:, None] * sample
