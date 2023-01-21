@@ -15,6 +15,7 @@ The core innovation of this algorithm lies in:
 <div align="center">
   <img src="https://github.com/xiaojianyang820/Dopamine/blob/main/images/SIF-DRL.jpg"><br><br>
 </div>
+
 - Under the guidance of this framework, a DRL algorithm based on the Gaussian Mixture Model for distribution representation -- `Mixed Weighted Gaussian(MWG)` algorithm -- is designed.
 The core program file of this algorithm is placed in `dopamine/agents/mg` .
 
