@@ -55,9 +55,9 @@ You can use the following sample commands to start model training. The `.gin` fi
     python -um dopamine.discrete_domains.train --base_dir tmp/iqn_${game_name} \
         --gin_files dopamine/agents/implicit_quantile/configs/implicit_quantile_${game_name}.gin
 	
-The pre-trained model file can be downloaded at this address, and the downloaded file is placed in the `tmp` folder. Use the above command to reload the neural network parameters and restart the relevant training.
+The pre-trained model file can be downloaded at this [address](https://drive.google.com/drive/folders/1HG2rkYvuisQHmLakWAtRf6J1mY9yRjJ1?usp=sharing), and the downloaded file is placed in the `tmp` folder. Use the above command to reload the neural network parameters and restart the relevant training.
 
-Some test videos of Atari games can be obtained under this address.
+Some test videos of Atari games can be obtained under this [address](https://www.youtube.com/watch?v=HylLIiSdnFA&list=PLLx_dwVwxN9XK36QVFVKTxzqCTXgDF-bE).
 
 
 
@@ -123,7 +123,7 @@ Some test videos of Atari games can be obtained under this address.
     python -um dopamine.discrete_domains.train --base_dir tmp/iqn_${game_name} \
         --gin_files dopamine/agents/implicit_quantile/configs/implicit_quantile_${game_name}.gin
 
-预训练好的模型文件可以在该地址下载，下载好的文件放入到`tmp`文件夹中，使用上面的命令可以重新载入神经网络参数，重启相关训练。
+预训练好的模型文件可以在该[地址](https://drive.google.com/drive/folders/1HG2rkYvuisQHmLakWAtRf6J1mY9yRjJ1?usp=sharing)下载，下载好的文件放入到`tmp`文件夹中，使用上面的命令可以重新载入神经网络参数，重启相关训练。
 
-Atari游戏的部分测试视频可以在该地址下获取。
+Atari游戏的部分测试视频可以在该[地址](https://www.youtube.com/watch?v=HylLIiSdnFA&list=PLLx_dwVwxN9XK36QVFVKTxzqCTXgDF-bE)下获取。
 
