@@ -3,9 +3,79 @@
   <img src="https://google.github.io/dopamine/images/dopamine_logo.png"><br><br>
 </div>
 
+## English Document
+This project will further develop the Distributional Reinforcement Learning(DRL) theory based on the Google open source project [dopamine](https://github.com/google/dopamine). For related dependencies and additional information of this project, please refer to the dopamine project documentation
+
+### New Algorithm
+### Mixed Weighted Gaussian Model(MWG)
+Under the Dopamine framework, we have added a new model named Mixed Weighted Gaussian. Related papers will be submitted online later.
+The core innovation of this algorithm lies in:
+- A brand-new specification implementation framework `SIF-DRL` for Distributional Reinforcement Learning algorithms is proposed. The core of this framework is two function spaces (**Distribution Function Space** and **Statistical Function Space**) and two conversion operators
+(**Sampling Operator** and **Projection Operator**), distinguish Bellman update from neural network update.
+<div align="center">
+  <img src="https://github.com/xiaojianyang820/Dopamine/blob/main/images/SIF-DRL.jpg"><br><br>
+</div>
+- Under the guidance of this framework, a DRL algorithm based on the Gaussian Mixture Model for distribution representation -- `Mixed Weighted Gaussian(MWG)` algorithm -- is designed.
+The core program file of this algorithm is placed in `dopamine/agents/mg` .
+
+#### Comparison Test
+The core innovation of the algorithm is to mix the original distribution estimate with the new distribution estimate before the projection operation. In order to test the effect of this innovation, two comparative experiments were designed, the comparison between `IQN` without distribution mixing and `Mix_IQN` with distribution mixing, and `No_Mix_MWG` without distribution mixing and `MWG` with distribution mixing contrast.
+
+Their gin configuration files are
+- Standard MWG algorithm: `dopamine/agents/mg/configs/mwg_zaxxon.gin`
+- Standard IQN algorithm: `dopamine/agents/implicit_quantile/configs/implicit_quantile_asteroids.gin`
+- Removed MWG algorithm for sample mixing: `dopamine/agents/mg/configs/mwg_no_mix_zaxxon.gin`
+- Added IQN algorithm for sample mixing: `dopamine/agents/implicit_quantile/configs/implicit_quantile_mix_asteroids.gin`
+
+The control effects under these four settings were tested on 12 Atari games as follows,
+<table border="2" align="center">
+    <th bgcolor="navy"> <td>Mean HNS </td> <td> Median HNS</td> </th>
+	<tr >
+		<td>IQN</td> <td>3.52</td> <td> 1.26</td>
+	</tr>
+    <tr >
+		<td>Mix_IQN</td> <td>3.83</td> <td> 1.35</td>
+	</tr>
+    <tr >
+		<td>No_Mix_MWG</td> <td>3.66</td> <td> 1.22</td>
+	</tr>
+    <tr >
+		<td>MWG</td> <td>4.57</td> <td> 1.42</td>
+	</tr>
+</table>
+<div align="center">
+  <img src="https://github.com/xiaojianyang820/Dopamine/blob/main/images/MixIQN.png"><br><br>
+</div>
+
+#### Start Training
+You can use the following sample commands to start model training. The `.gin` file is the configuration file of the algorithm parameters.
+`base_dir` specifies the storage folder of training logs and model parameters. If the folder is not empty, the program will read the existing parameters first and continue to run the program.
+    
+    export game_name=asteroids
+    python -um dopamine.discrete_domains.train --base_dir tmp/iqn_${game_name} \
+        --gin_files dopamine/agents/implicit_quantile/configs/implicit_quantile_${game_name}.gin
+	
+The pre-trained model file can be downloaded at this address, and the downloaded file is placed in the `tmp` folder. Use the above command to reload the neural network parameters and restart the relevant training.
+
+Some test videos of Atari games can be obtained under this address.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Chinese Document
 本项目将在Google开源 [Dopamine项目](https://github.com/google/dopamine) 的基础上，进一步发展值分布型强化学习算法。 该项目相关依赖请参考[Dopamine](https://github.com/google/dopamine) 。
 
-## 新增算法
+### 新增算法
 ### 高斯混合算法
 在Dopamine框架下我们新增了高斯混合算法（Mixed Weighted Gaussian，MWG）。相关的论文我们会随后提交至线上。
 这一算法的核心创新点在于：
@@ -50,8 +120,8 @@
 可以通过如下的样例命令来开启模型训练，`.gin`文件是算法参数的配置文件，`base_dir`指定了训练日志以及模型参数的存储文件夹，如果该文件夹非空，程序会优先读取其中已有的参数，并继续运行程序。
     
     export game_name=asteroids
-    nohup python -um dopamine.discrete_domains.train --base_dir tmp/iqn_${game_name} \
-        --gin_files dopamine/agents/implicit_quantile/configs/implicit_quantile_${game_name}.gin -> tmp/iqn_${game_name}_output &
+    python -um dopamine.discrete_domains.train --base_dir tmp/iqn_${game_name} \
+        --gin_files dopamine/agents/implicit_quantile/configs/implicit_quantile_${game_name}.gin
 
 预训练好的模型文件可以在该地址下载，下载好的文件放入到`tmp`文件夹中，使用上面的命令可以重新载入神经网络参数，重启相关训练。
 
