@@ -14,6 +14,22 @@ import os
 import random
 
 
+@gin.configurable
+def piecewise_linearly_decaying_epsilon(decay_period, step, warmup_steps, epsilon):
+    if step <= warmup_steps:
+        return 1.0
+    elif step <= (warmup_steps + decay_period / 10.0):
+        return epsilon * 10 + (1.0 - epsilon * 10) * (1 - step / (warmup_steps + decay_period / 10.0))
+    elif step <= (warmup_steps + decay_period):
+        return epsilon + (epsilon * 9) * (1 - step / (warmup_steps + decay_period))
+    elif step <= decay_period * 2:
+        return 0.005
+    elif step <= decay_period * 3:
+        return 0.002
+    else:
+        return 0.0
+
+
 class BaseGaussianNetwork(keras.Model):
     def __init__(self, action_num: int, name: str = None, embedding_dim: int = 128,
                  conv_1: tuple = ([8, 8], 4), conv_2: tuple = ([4, 4], 2), conv_3: tuple = ([3, 3], 1)):
@@ -59,7 +75,6 @@ class BaseGaussianNetwork(keras.Model):
     def call(self, state: tf.Tensor, is_positive: bool = False) -> tuple:
         """
         前向计算流图
-
         :param state: tf.Tensor,
             当前状态观测的状态表示张量
         :return: collections.namedtuple
@@ -111,6 +126,8 @@ class BaseGaussianNetwork(keras.Model):
             action_std = self.dense_2_std_2(self.dense_2_std_1(state_feature_vec))
             # BatchSize x ActionNum x 1
             action_std = tf.reshape(action_std, [batch_size, self.action_num, 1]) / 2
+            print('限制标准差的取值范围')
+            action_std = tf.tanh(action_std) * 4
             action_std = tf.exp(action_std)/2
 
         # 特性向量 -->> 权重 区块
@@ -152,7 +169,6 @@ class TriangleWeightGaussianNetwork(keras.Model):
     def call(self, state: tf.Tensor) -> collections.namedtuple:
         """
         前向计算流图
-
         :param state: tf.Tensor,
             当前状态观测的状态表示张量
         :return: collections.namedtuple
@@ -208,7 +224,6 @@ class FiveWeightGaussianNetwork(keras.Model):
     def call(self, state: tf.Tensor) -> collections.namedtuple:
         """
         前向计算流图
-
         :param state: tf.Tensor,
             当前状态观测的状态表示张量
         :return: collections.namedtuple
@@ -275,7 +290,6 @@ class HeptadWeightGaussianNetwork(keras.Model):
     def call(self, state: tf.Tensor) -> collections.namedtuple:
         """
         前向计算流图
-
         :param state: tf.Tensor,
             当前状态观测的状态表示张量
         :return: collections.namedtuple
@@ -308,10 +322,9 @@ class MultiWeightGaussianAgent(rainbow_agent.RainbowAgent):
     def __init__(self, sess, action_num: int, network=TriangleWeightGaussianNetwork, double_dqn: bool = True,
                  sample_num: int = 192, action_mode: str = 'mean', loss_mode: str = 'mse',
                  before_project_mix_samples: bool = True, prob_clib_value: float = 0.004,
-                 per_mode: str = 'kl',
+                 per_mode: str = 'kl', p_distance: int = 2,
                  summary_writer=None, summary_writing_frequency=500, print_freq=100000):
         """
-
         :param sess: tf.Session,
             执行运算过程的TF计算资源会话
         :param action_num: int,
@@ -331,9 +344,9 @@ class MultiWeightGaussianAgent(rainbow_agent.RainbowAgent):
             是否在投影之前将新旧分布的表示样本进行混合
         :param prob_clib_value: float, optional=0.004
             对归属于某一个高斯分量的概率值进行截断的最小数值，默认值为0.004，约为3个标准差的距离
-        :param per_mode: str, optional=('kl', 'wasserstein', 'mse', 'jt')
-            进行优先经验回放时选择的模式，'kl'对应了两个分布之间的KL散度；'wasserstein'对应两个分布之间的2阶Wasserstein距离；
-            'jt'对应两个分布之间的JT(2,2)散度；'mse'对应统计量之间的均方误差。
+        :param per_mode: str, optional=('kl', 'wasserstein', 'mse', 'jt', 'l')
+            进行优先经验回放时选择的模式，'kl'对应了两个分布之间的KL散度；'wasserstein'对应两个分布之间的p阶Wasserstein距离；
+            'jt'对应两个分布之间的JT(2,2)散度；'mse'对应统计量之间的均方误差；'l'对应了两个分布之间的p阶L距离。
         :param summary_writer: callable,
             汇总信息写入函数
         :param summary_writing_frequency: int,
@@ -351,6 +364,7 @@ class MultiWeightGaussianAgent(rainbow_agent.RainbowAgent):
         self.before_project_mix_samples = before_project_mix_samples
         self.prob_clib_value = prob_clib_value
         self.per_mode = per_mode
+        self.p_distance = p_distance
         print('高斯分量的数量：%d' % self.gaussian_num)
 
         super(MultiWeightGaussianAgent, self).__init__(
@@ -443,7 +457,7 @@ class MultiWeightGaussianAgent(rainbow_agent.RainbowAgent):
         self._replay_target_network_argmax = _target_argmax if not self.double_dqn else _online_argmax
         # ++++++++++++++++++ 目标网络 +++++++++++++++++++++++++
 
-    def _build_samples_op(self, _target_mean, _target_std, _target_weight):
+    def _build_samples_op(self, _target_mean, _target_std, _target_weight, sample_num: int = None):
         """
         从一组代表潜在值分布的加权高斯分量中抽取样本
 
@@ -456,11 +470,11 @@ class MultiWeightGaussianAgent(rainbow_agent.RainbowAgent):
         :return:
         """
         batch_size = self._replay.batch_size
-        sample_num = self.sample_num
+        sample_num = sample_num if sample_num else self.sample_num
 
         if len(_target_mean.shape) == 2:
             # 1 x SampleNum
-            rd_matrix = tf.linspace(start=0.0001, stop=0.9999, num=self.sample_num)[None, :]
+            rd_matrix = tf.linspace(start=0.0001, stop=0.9999, num=sample_num)[None, :]
             # BatchSize x GaussianNum
             accu_weight = tf.cumsum(_target_weight, axis=-1)
             dist_mask_list = []
@@ -469,21 +483,21 @@ class MultiWeightGaussianAgent(rainbow_agent.RainbowAgent):
                 for exit_mask in dist_mask_list:
                     init_dist_mask = init_dist_mask * (1 - exit_mask)
                 # BatchSize x SampleNum
-                dist_mask = init_dist_mask * tf.cast(rd_matrix < accu_weight[:, k:k+1], tf.float32)
+                dist_mask = init_dist_mask * tf.cast(rd_matrix < accu_weight[:, k:k + 1], tf.float32)
                 dist_mask_list.append(dist_mask)
 
             sample_list = []
             for k in range(self.gaussian_num):
                 # BatchSize x SampleNum
-                mean = tf.tile(_target_mean[:, k:k+1], multiples=[1, sample_num])
+                mean = tf.tile(_target_mean[:, k:k + 1], multiples=[1, sample_num])
                 # BatchSize x SampleNum
-                std = tf.tile(_target_std[:, k:k+1], multiples=[1, sample_num])
+                std = tf.tile(_target_std[:, k:k + 1], multiples=[1, sample_num])
                 # BatchSize x SampleNum
                 sample = tf.compat.v1.random.normal(shape=[batch_size, sample_num], mean=mean, stddev=std)
                 sample_list.append(sample)
         else:
             # 1 x 1 x SampleNum
-            rd_matrix = tf.linspace(start=0.0001, stop=0.9999, num=self.sample_num)[None, None, :]
+            rd_matrix = tf.linspace(start=0.0001, stop=0.9999, num=sample_num)[None, None, :]
             # BatchSize x ActionNum x GaussianNum
             accu_weight = tf.cumsum(_target_weight, axis=-1)
             dist_mask_list = []
@@ -547,16 +561,50 @@ class MultiWeightGaussianAgent(rainbow_agent.RainbowAgent):
         batch_size = self._replay.batch_size
         # BatchSize x SampleNum
         target_samples = self._build_target_samples_op()
+        current_samples = self._build_samples_op(_cur_mean, _cur_std, _cur_weight)
+        tf.debugging.check_numerics(target_samples, message='Nan值出现在target_samples')
+        tf.debugging.check_numerics(current_samples, message='Nan值出现在current_samples')
 
         if self.before_project_mix_samples:
             print('进行投影前样本混合')
             # BatchSize x SampleNum
-            current_samples = self._build_samples_op(_cur_mean, _cur_std, _cur_weight)
             target_samples = tf.concat([target_samples, current_samples], axis=1)
         else:
             print('不进行投影前样本混合')
 
+        def _calculate_w_distance(curr_samples: tf.Tensor, targ_samples: tf.Tensor, p: int = 2):
+            sorted_curr_samples = tf.sort(curr_samples, axis=1)
+            sorted_targ_samples = tf.sort(targ_samples, axis=1)
+            if p <= 4:
+                w_distance = tf.reduce_mean(tf.abs(sorted_curr_samples - sorted_targ_samples) ** p, axis=1) ** (1 / p)
+            else:
+                w_distance = tf.reduce_max(tf.abs(sorted_curr_samples - sorted_targ_samples), axis=1)
+            return w_distance
+
+        def _calculate_l_distance(curr_samples: tf.Tensor, targ_samples: tf.Tensor, p: int = 2):
+            sample_num = curr_samples.get_shape().as_list()[1]
+            concat_samples = tf.concat([curr_samples, targ_samples], axis=1)
+            # BatchSize x SampleNum_1 x 1
+            sorted_concat_samples = tf.sort(concat_samples, axis=1)[:, :, None]
+            # BatchSize x SampleNum_1
+            curr_cdf = tf.reduce_sum(
+                tf.cast(curr_samples[:, None, :] <= sorted_concat_samples, tf.float32), axis=2
+            ) / sample_num
+            targ_cdf = tf.reduce_sum(
+                tf.cast(targ_samples[:, None, :] <= sorted_concat_samples, tf.float32), axis=2
+            ) / sample_num
+            if p <= 4:
+                l_distance = tf.reduce_mean(tf.abs(curr_cdf - targ_cdf) ** p, axis=1) ** (1 / p)
+            else:
+                l_distance = tf.reduce_max(tf.abs(curr_cdf - targ_cdf), axis=1)
+            return l_distance
+
         target_sample_num = target_samples.get_shape().as_list()[1]
+
+        current_samples_2 = self._build_samples_op(_cur_mean, _cur_std, _cur_weight, target_sample_num)
+        self.w_distance = _calculate_w_distance(current_samples_2, target_samples, self.p_distance)
+        self.l_distance = _calculate_l_distance(current_samples_2, target_samples, self.p_distance)
+
         # E步
         # 每一个样本归属到每一个类别的概率
         # GaussianNum x BatchSize x SampleNum
@@ -570,6 +618,7 @@ class MultiWeightGaussianAgent(rainbow_agent.RainbowAgent):
         # GaussianNum x BatchSize x SampleNum
         prob_list = [1 / (tf.sqrt(2 * pi) * std) * tf.exp(-(target_samples - mean) ** 2 / (2 * std ** 2))
                      for mean, std in zip(dist_mean_list, dist_std_list)]
+        [tf.debugging.check_numerics(g, message='Nan值出现在prob_list中') for g in prob_list]
         clip_value = self.prob_clib_value
         print('概率值的截断系数为：', clip_value)
         prob_list = [tf.clip_by_value(prob, clip_value, 3) for prob in prob_list]
@@ -580,6 +629,7 @@ class MultiWeightGaussianAgent(rainbow_agent.RainbowAgent):
         total_weight = sum(weighted_prob_list)
         # GaussianNum x BatchSize x SampleNum
         weight_list = [weighted_prob / total_weight for weighted_prob in weighted_prob_list]
+        [tf.debugging.check_numerics(g, message='Nan值出现在weight_list中') for g in weight_list]
 
         # 离散化采样
         print('进行离散化采样')
@@ -659,10 +709,12 @@ class MultiWeightGaussianAgent(rainbow_agent.RainbowAgent):
 
         # BatchSize X GaussianNum
         learning_weight = tf.sqrt(_tar_weight * 2)
+
         # BatchSize
         mean_loss = tf.reduce_sum((_cur_mean - _tar_mean) ** 2 * learning_weight, axis=1)
         # BatchSize
         std_loss = tf.reduce_sum((_cur_std - _tar_std) ** 2 * learning_weight, axis=1)
+
         # BatchSize
         weight_loss = tf.reduce_sum(tf.square(_cur_weight - _tar_weight), axis=1)
         # TODO: 高斯混合分布下的KL散度距离
@@ -723,8 +775,11 @@ class MultiWeightGaussianAgent(rainbow_agent.RainbowAgent):
         # +++++++++++++++++++ 优先经验回放权重更新 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
         if self._replay_scheme == 'prioritized':
             if self.per_mode.lower() == 'wasserstein':
-                print('使用[分布函数空间]2阶Wasserstein距离进行优先经验回放')
-                prioritized_weight = mean_loss + std_loss
+                print('使用[分布函数空间]%d阶Wasserstein距离进行优先经验回放' % self.p_distance)
+                prioritized_weight = self.w_distance
+            elif self.per_mode.lower() == 'l':
+                print('使用[分布函数空间]%d阶L距离进行优先经验回放' % self.p_distance)
+                prioritized_weight = self.l_distance
             elif self.per_mode.lower() == 'mse':
                 print('使用[统计量函数空间]均方误差进行优先经验回放')
                 prioritized_weight = mean_loss + std_loss + weight_loss
@@ -757,11 +812,9 @@ class MultiWeightGaussianAgent(rainbow_agent.RainbowAgent):
 
     def _train_step(self):
         """Runs a single training step.
-
             Runs a training op if both:
               (1) A minimum number of frames have been added to the replay buffer.
               (2) `training_steps` is a multiple of `update_period`.
-
             Also, syncs weights from online to target network if training steps is a
             multiple of target update period.
         """

@@ -178,7 +178,7 @@ class Runner(object):
                training_steps=250000,
                evaluation_steps=125000,
                max_steps_per_episode=27000,
-               clip_rewards=True,
+               clip_rewards: str = 'One',
                use_legacy_logger=True,
                fine_grained_print_to_console=True):
     """Initialize the Runner object in charge of running a full experiment.
@@ -266,7 +266,7 @@ class Runner(object):
     self._max_steps_per_episode = max_steps_per_episode
     # 存储日志基文件夹
     self._base_dir = base_dir
-    # 是否截断奖励信号到[-1, 1]之间
+    # 截断奖励信号的模式，'One': [-1, 1]，'Sqrt': np.sqrt(reward) + 0.001*reward， 'Identity': reward
     self._clip_rewards = clip_rewards
     # 创建存储节点文件夹和日志记录器
     self._create_directories()
@@ -444,14 +444,15 @@ class Runner(object):
       total_reward += reward
       step_number += 1
 
-      if self._clip_rewards:
+      if self._clip_rewards == 'One':
         # Perform reward clipping.
         #print('将奖励信号裁剪到-1至+1')
         reward = np.clip(reward, -1, 1)
-      else:
+      elif self._clip_rewards == 'Sqrt':
         #print('调整奖励信号的量纲')
         reward = np.sign(reward) * np.sqrt(np.abs(reward)) + 0.001 * reward
-        pass
+      else:
+        reward = reward
 
       if (self._environment.game_over or
           step_number == self._max_steps_per_episode):
