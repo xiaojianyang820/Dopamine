@@ -39,7 +39,7 @@ The core program file of this algorithm is placed in `dopamine/agents/mg` .
 You can use the following sample commands to start model training. The `.gin` file is the configuration file of the algorithm parameters.
 `base_dir` specifies the storage folder of training logs and model parameters. If the folder is not empty, the program will read the existing parameters first and continue to run the program.
     
-    export game_name=asteroids
+    export game_name=zaxxon
     python -um dopamine.discrete_domains.train --base_dir tmp/mwg_${game_name} \
         --gin_files dopamine/agents/mg/configs/mwg_${game_name}.gin
 	
