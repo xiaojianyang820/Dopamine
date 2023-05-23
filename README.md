@@ -43,7 +43,7 @@ You can use the following sample commands to start model training. The `.gin` fi
     python -um dopamine.discrete_domains.train --base_dir tmp/mwg_${game_name} \
         --gin_files dopamine/agents/mg/configs/mwg_${game_name}.gin
 	
-The pre-trained model file can be downloaded at this [address](https://drive.google.com/drive/folders/1HG2rkYvuisQHmLakWAtRf6J1mY9yRjJ1?usp=sharing), and the downloaded file is placed in the `tmp` folder. Use the above command to reload the neural network parameters and restart the relevant training.
+The pre-trained model file can be downloaded at this [address](https://drive.google.com/drive/folders/10CQRcEaEDCmOuM9Nh-gLtkF0w59hQJiq?usp=sharing), and the downloaded file is placed in the `tmp` folder. Use the above command to reload the neural network parameters and restart the relevant training.
 
 Some test videos of Atari games can be obtained under this [address](https://www.youtube.com/watch?v=HylLIiSdnFA&list=PLLx_dwVwxN9XK36QVFVKTxzqCTXgDF-bE).
 
